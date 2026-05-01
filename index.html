@@ -101,6 +101,7 @@ tr:hover { background: var(--surface2); }
   <!-- Charts and content injected by JS -->
 </div>
 
+<script src="lib.js"></script>
 <script>
 const API_BASE = 'https://huggingface.co/api/models';
 const PIPELINE = 'text-generation';
@@ -114,60 +115,6 @@ cutoffDate.setHours(0, 0, 0, 0);
 
 let allModels = [];
 
-function formatNum(n) {
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-  return n.toString();
-}
-
-function formatParams(n) {
-  if (!n) return 'Unknown';
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-  if (n >= 1e6) return (n / 1e6).toFixed(0) + 'M';
-  return (n / 1e3).toFixed(0) + 'K';
-}
-
-function getModelCategory(model) {
-  const tags = model.tags || [];
-  const hasBaseModelFT = tags.some(t => t.startsWith('base_model:finetune:'));
-  const hasBaseModelAdapter = tags.some(t => t.startsWith('base_model:adapter:'));
-  const hasBaseModelQuant = tags.some(t => t.startsWith('base_model:quantized:'));
-  const hasBaseModel = tags.some(t => t.startsWith('base_model:') && !t.startsWith('base_model:finetune:') && !t.startsWith('base_model:adapter:') && !t.startsWith('base_model:quantized:'));
-
-  if (hasBaseModelAdapter || tags.includes('lora') || tags.includes('peft')) return 'adapter';
-  if (hasBaseModelQuant) return 'quantized';
-  if (hasBaseModelFT || hasBaseModel) return 'finetune';
-  return 'base';
-}
-
-function getBaseModelId(model) {
-  const tags = model.tags || [];
-  for (const t of tags) {
-    for (const prefix of ['base_model:finetune:', 'base_model:adapter:', 'base_model:quantized:', 'base_model:']) {
-      if (t.startsWith(prefix)) return t.slice(prefix.length);
-    }
-  }
-  return null;
-}
-
-function getParamCount(model) {
-  if (model.safetensors && model.safetensors.total) return model.safetensors.total;
-  // Try parsing from name
-  const match = model.id.match(/(\d+\.?\d*)\s*[Bb]/);
-  if (match) return parseFloat(match[1]) * 1e9;
-  const matchM = model.id.match(/(\d+\.?\d*)\s*[Mm]/);
-  if (matchM) return parseFloat(matchM[1]) * 1e6;
-  return null;
-}
-
-function getInferenceProviders(model) {
-  if (!model.inferenceProviderMapping || !Array.isArray(model.inferenceProviderMapping)) return [];
-  return model.inferenceProviderMapping
-    .filter(p => p.status === 'live')
-    .map(p => p.provider);
-}
-
 async function fetchModels() {
   const limit = 100;
   let offset = 0;
@@ -175,7 +122,7 @@ async function fetchModels() {
   let fetched = 0;
 
   while (keepGoing) {
-    const url = `${API_BASE}?pipeline_tag=${PIPELINE}&sort=createdAt&direction=-1&limit=${limit}&offset=${offset}&expand[]=safetensors&expand[]=inferenceProviderMapping&expand[]=downloads`;
+    const url = buildFetchUrl(API_BASE, PIPELINE, limit, offset);
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

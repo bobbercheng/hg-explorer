@@ -1,0 +1,11 @@
+{
+  "name": "hg-explorer",
+  "version": "1.0.0",
+  "description": "Interactive dashboard analyzing HuggingFace LLM model trends",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

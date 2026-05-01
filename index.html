@@ -162,10 +162,10 @@ function getParamCount(model) {
 }
 
 function getInferenceProviders(model) {
-  if (!model.inferenceProviderMapping) return [];
-  return Object.entries(model.inferenceProviderMapping)
-    .filter(([, v]) => v.status === 'live')
-    .map(([k]) => k);
+  if (!model.inferenceProviderMapping || !Array.isArray(model.inferenceProviderMapping)) return [];
+  return model.inferenceProviderMapping
+    .filter(p => p.status === 'live')
+    .map(p => p.provider);
 }
 
 async function fetchModels() {
@@ -175,7 +175,7 @@ async function fetchModels() {
   let fetched = 0;
 
   while (keepGoing) {
-    const url = `${API_BASE}?pipeline_tag=${PIPELINE}&sort=createdAt&direction=-1&limit=${limit}&offset=${offset}&expand[]=safetensors&expand[]=inferenceProviderMapping`;
+    const url = `${API_BASE}?pipeline_tag=${PIPELINE}&sort=createdAt&direction=-1&limit=${limit}&offset=${offset}&expand[]=safetensors&expand[]=inferenceProviderMapping&expand[]=downloads`;
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

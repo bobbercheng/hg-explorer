@@ -86,6 +86,12 @@ tr:hover { background: var(--surface2); }
 .search-box { width: 100%; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; margin-bottom: 16px; outline: none; }
 .search-box:focus { border-color: var(--accent); }
 .chart-note { font-size: 11px; color: var(--text2); margin-top: 8px; }
+.card-fs { position: relative; }
+.card-fs .fs-btn { position: absolute; top: 12px; right: 14px; cursor: pointer; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); font-size: 12px; padding: 4px 10px; z-index: 5; transition: all 0.2s; }
+.card-fs .fs-btn:hover { border-color: var(--accent); color: var(--text); }
+.card-fs.fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; overflow: auto; display: flex; flex-direction: column; }
+.card-fs.fullscreen canvas { max-height: none !important; flex: 1; }
+.card-fs.fullscreen .fs-btn { top: 16px; right: 20px; }
 #scatter3d-card { position: relative; }
 #scatter3d-tooltip { display: none; position: fixed; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--text); pointer-events: none; z-index: 1001; max-width: 400px; line-height: 1.6; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
 #scatter3d-tooltip .tt-name { font-weight: 700; font-size: 13px; color: var(--accent2); margin-bottom: 4px; word-break: break-all; }
@@ -121,6 +127,21 @@ tr:hover { background: var(--surface2); }
 <script>
 let allModels = [];
 let dataUpdatedAt = '';
+
+function toggleFS(btn) {
+  const card = btn.closest('.card-fs');
+  card.classList.toggle('fullscreen');
+  const isFS = card.classList.contains('fullscreen');
+  btn.textContent = isFS ? '\u2716' : '\u26F6';
+  // Resize chart after layout change
+  setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 50);
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const fs = document.querySelector('.card-fs.fullscreen');
+    if (fs) { fs.querySelector('.fs-btn').click(); }
+  }
+});
 
 async function loadData() {
   const resp = await fetch('data.json');
@@ -178,8 +199,8 @@ function renderApp() {
       <div id="scatter3d-tooltip"></div>
     </div>
     <div class="grid triple">
-      <div class="card"><h2>Downloads by Model Size</h2><canvas id="chart-scatter"></canvas></div>
-      <div class="card"><h2>Model Size by Release Date</h2><canvas id="chart-size-date"></canvas></div>
+      <div class="card card-fs" id="card-scatter"><button class="fs-btn" onclick="toggleFS(this)">&#x26F6;</button><h2>Downloads by Model Size</h2><canvas id="chart-scatter"></canvas></div>
+      <div class="card card-fs" id="card-size-date"><button class="fs-btn" onclick="toggleFS(this)">&#x26F6;</button><h2>Model Size by Release Date</h2><canvas id="chart-size-date"></canvas></div>
       <div class="card"><h2>Monthly Trends</h2><canvas id="chart-monthly"></canvas></div>
     </div>
     <div class="card full" style="margin-bottom:20px">
@@ -317,8 +338,8 @@ function buildCharts() {
           const cat = getModelCategory(allModels.find(m => m.id === ctx.raw?.label) || {});
           return cat === 'base' ? '#6c5ce7aa' : cat === 'quantized' ? '#fdcb6eaa' : cat === 'adapter' ? '#ff7675aa' : '#00cec9aa';
         },
-        pointRadius: 5,
-        pointHoverRadius: 8
+        pointRadius: 2.5,
+        pointHoverRadius: 5
       }]
     },
     options: {
@@ -351,8 +372,8 @@ function buildCharts() {
           const cat = getModelCategory(allModels.find(m => m.id === ctx.raw?.label) || {});
           return catColorMap[cat] || '#8b90a5aa';
         },
-        pointRadius: 4,
-        pointHoverRadius: 7
+        pointRadius: 2.5,
+        pointHoverRadius: 5
       }]
     },
     options: {

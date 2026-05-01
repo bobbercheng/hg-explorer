@@ -52,8 +52,8 @@ function getInferenceProviders(model) {
     .map(p => p.provider);
 }
 
-function buildFetchUrl(apiBase, pipeline, limit, offset) {
-  return `${apiBase}?pipeline_tag=${pipeline}&sort=createdAt&direction=-1&limit=${limit}&offset=${offset}&expand[]=safetensors&expand[]=inferenceProviderMapping&expand[]=downloads`;
+function buildFetchUrl(apiBase, pipeline, limit, offset, sort = 'createdAt') {
+  return `${apiBase}?pipeline_tag=${pipeline}&sort=${sort}&direction=-1&limit=${limit}&offset=${offset}&expand[]=safetensors&expand[]=inferenceProviderMapping&expand[]=downloads&expand[]=createdAt&expand[]=tags`;
 }
 
 function filterModels(data, cutoffDate, minDownloads) {

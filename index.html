@@ -88,12 +88,12 @@ tr:hover { background: var(--surface2); }
 
 <div class="loading-overlay" id="loading">
   <div class="spinner"></div>
-  <div class="loading-text" id="loading-text">Fetching models from HuggingFace API...</div>
-  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div class="loading-text" id="loading-text">Loading model data...</div>
 </div>
 
 <div class="header">
   <h1>HuggingFace <span>LLM Trends</span> Explorer</h1>
+  <div class="data-date" id="data-date" style="font-size:12px;color:#8b90a5;"></div>
   <div class="stats" id="header-stats"></div>
 </div>
 
@@ -103,57 +103,15 @@ tr:hover { background: var(--surface2); }
 
 <script src="lib.js"></script>
 <script>
-const API_BASE = 'https://huggingface.co/api/models';
-const PIPELINE = 'text-generation';
-const MIN_DOWNLOADS = 1000;
-const MONTHS_BACK = 4;
-
-const cutoffDate = new Date();
-cutoffDate.setMonth(cutoffDate.getMonth() - MONTHS_BACK);
-cutoffDate.setDate(1);
-cutoffDate.setHours(0, 0, 0, 0);
-
 let allModels = [];
+let dataUpdatedAt = '';
 
-async function fetchModels() {
-  const limit = 100;
-  let offset = 0;
-  let keepGoing = true;
-  let fetched = 0;
-
-  while (keepGoing) {
-    const url = buildFetchUrl(API_BASE, PIPELINE, limit, offset);
-    try {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-
-      if (data.length === 0) { keepGoing = false; break; }
-
-      for (const m of data) {
-        const created = new Date(m.createdAt);
-        if (created < cutoffDate) { keepGoing = false; break; }
-        if ((m.downloads || 0) >= MIN_DOWNLOADS) {
-          allModels.push(m);
-        }
-        fetched++;
-      }
-
-      offset += limit;
-      document.getElementById('loading-text').textContent = `Fetched ${fetched} models, ${allModels.length} with 1K+ downloads...`;
-      document.getElementById('progress-fill').style.width = Math.min(90, (fetched / 5000) * 100) + '%';
-
-      // Small delay to avoid rate limiting
-      await new Promise(r => setTimeout(r, 200));
-    } catch (e) {
-      console.error('Fetch error:', e);
-      keepGoing = false;
-    }
-  }
-
-  document.getElementById('progress-fill').style.width = '100%';
-  document.getElementById('loading-text').textContent = `Processing ${allModels.length} models...`;
-  await new Promise(r => setTimeout(r, 300));
+async function loadData() {
+  const resp = await fetch('data.json');
+  if (!resp.ok) throw new Error(`Failed to load data.json: HTTP ${resp.status}`);
+  const data = await resp.json();
+  allModels = data.models;
+  dataUpdatedAt = data.updatedAt;
 }
 
 function buildHeaderStats() {
@@ -162,6 +120,10 @@ function buildHeaderStats() {
   const totalDownloads = allModels.reduce((s, m) => s + (m.downloads || 0), 0);
   const providersSet = new Set();
   allModels.forEach(m => getInferenceProviders(m).forEach(p => providersSet.add(p)));
+
+  document.getElementById('data-date').textContent = dataUpdatedAt
+    ? `Data updated: ${new Date(dataUpdatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+    : '';
 
   document.getElementById('header-stats').innerHTML = `
     <div class="stat-box"><div class="val">${formatNum(allModels.length)}</div><div class="label">Models (1K+ DL)</div></div>
@@ -525,10 +487,15 @@ function buildTable() {
 
 // Main
 (async () => {
-  await fetchModels();
-  document.getElementById('loading').classList.add('hidden');
-  buildHeaderStats();
-  renderApp();
+  try {
+    await loadData();
+    document.getElementById('loading').classList.add('hidden');
+    buildHeaderStats();
+    renderApp();
+  } catch (e) {
+    document.getElementById('loading-text').textContent = `Error: ${e.message}. Run "node update-data.js" to generate data.json`;
+    console.error(e);
+  }
 })();
 </script>
 </body>

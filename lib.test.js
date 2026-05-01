@@ -227,12 +227,24 @@ describe('buildFetchUrl', () => {
     expect(url).toContain('expand[]=safetensors');
     expect(url).toContain('expand[]=inferenceProviderMapping');
     expect(url).toContain('expand[]=downloads');
+    expect(url).toContain('expand[]=createdAt');
+    expect(url).toContain('expand[]=tags');
   });
 
   test('uses provided offset', () => {
     const url = buildFetchUrl('https://huggingface.co/api/models', 'text-generation', 50, 200);
     expect(url).toContain('limit=50');
     expect(url).toContain('offset=200');
+  });
+
+  test('supports custom sort parameter', () => {
+    const url = buildFetchUrl('https://huggingface.co/api/models', 'text-generation', 100, 0, 'downloads');
+    expect(url).toContain('sort=downloads');
+  });
+
+  test('defaults to createdAt sort', () => {
+    const url = buildFetchUrl('https://huggingface.co/api/models', 'text-generation', 100, 0);
+    expect(url).toContain('sort=createdAt');
   });
 });
 

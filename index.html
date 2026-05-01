@@ -86,7 +86,8 @@ tr:hover { background: var(--surface2); }
 .search-box { width: 100%; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; margin-bottom: 16px; outline: none; }
 .search-box:focus { border-color: var(--accent); }
 .chart-note { font-size: 11px; color: var(--text2); margin-top: 8px; }
-#scatter3d-tooltip { display: none; position: absolute; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--text); pointer-events: none; z-index: 10; max-width: 400px; line-height: 1.6; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+#scatter3d-card { position: relative; }
+#scatter3d-tooltip { display: none; position: fixed; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--text); pointer-events: none; z-index: 1001; max-width: 400px; line-height: 1.6; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
 #scatter3d-tooltip .tt-name { font-weight: 700; font-size: 13px; color: var(--accent2); margin-bottom: 4px; word-break: break-all; }
 #scatter3d-tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; }
 #scatter3d-tooltip .tt-label { color: var(--text2); }
@@ -176,8 +177,9 @@ function renderApp() {
       <div id="scatter3d-container" style="width:100%;height:550px;position:relative;border-radius:8px;overflow:hidden;background:#0a0c12;"></div>
       <div id="scatter3d-tooltip"></div>
     </div>
-    <div class="grid">
-      <div class="card"><h2>Downloads by Model Size (2D)</h2><canvas id="chart-scatter"></canvas></div>
+    <div class="grid triple">
+      <div class="card"><h2>Downloads by Model Size</h2><canvas id="chart-scatter"></canvas></div>
+      <div class="card"><h2>Model Size by Release Date</h2><canvas id="chart-size-date"></canvas></div>
       <div class="card"><h2>Monthly Trends</h2><canvas id="chart-monthly"></canvas></div>
     </div>
     <div class="card full" style="margin-bottom:20px">
@@ -332,6 +334,40 @@ function buildCharts() {
     }
   });
 
+  // Model Size by Release Date
+  const sizeDateData = allModels.filter(m => getParamCount(m) && m.createdAt).map(m => ({
+    x: m.createdAt.slice(0, 10),
+    y: getParamCount(m) / 1e9,
+    label: m.id
+  }));
+  const catColorMap = { base: '#6c5ce7aa', finetune: '#00cec9aa', quantized: '#fdcb6eaa', adapter: '#ff7675aa' };
+  new Chart(document.getElementById('chart-size-date'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'Models',
+        data: sizeDateData,
+        backgroundColor: (ctx) => {
+          const cat = getModelCategory(allModels.find(m => m.id === ctx.raw?.label) || {});
+          return catColorMap[cat] || '#8b90a5aa';
+        },
+        pointRadius: 4,
+        pointHoverRadius: 7
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${formatParams(ctx.raw.y * 1e9)} — ${ctx.raw.x}` } }
+      },
+      scales: {
+        x: { type: 'time', time: { unit: 'week', tooltipFormat: 'MMM d' }, title: { display: true, text: 'Release Date' } },
+        y: { type: 'logarithmic', title: { display: true, text: 'Parameters (B)' }, ticks: { callback: v => formatNum(v * 1e9) } }
+      }
+    }
+  });
+
   // Monthly trends
   const monthMap = {};
   allModels.forEach(m => {
@@ -374,7 +410,7 @@ async function build3DScatter() {
   scene.background = new THREE.Color(0x0a0c12);
 
   const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-  camera.position.set(14, 10, 14);
+  camera.position.set(16, 8, 16);
 
   let renderer;
   try {
@@ -392,7 +428,7 @@ async function build3DScatter() {
   controls.dampingFactor = 0.08;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.5;
-  controls.target.set(5, 4, 5); // Look at center of data cube
+  controls.target.set(4, 3, 4); // Look slightly below center to push chart left/down
 
   // Prepare data - 3 axes: X=log(params), Y=log(downloads), Z=date
   const models3d = allModels.filter(m => getParamCount(m) && m.createdAt);
@@ -563,9 +599,8 @@ async function build3DScatter() {
           ${baseId ? `<div class="tt-row"><span class="tt-label">Base Model</span><span class="tt-val" style="font-size:11px">${baseId}</span></div>` : ''}
           ${providers.length ? `<div class="tt-row"><span class="tt-label">Providers</span><span class="tt-val">${providers.join(', ')}</span></div>` : ''}`;
       }
-      const cardRect = document.getElementById('scatter3d-card').getBoundingClientRect();
-      tooltip.style.left = (e.clientX - cardRect.left + 14) + 'px';
-      tooltip.style.top = (e.clientY - cardRect.top - 10) + 'px';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
       controls.autoRotate = false;
     } else {
       tooltip.style.display = 'none';
@@ -589,7 +624,7 @@ async function build3DScatter() {
   animate();
 
   // View presets
-  const CENTER = new THREE.Vector3(5, 4, 5);
+  const CENTER = new THREE.Vector3(4, 3, 4);
   function setView(pos, target) {
     camera.position.set(...pos);
     controls.target.copy(target || CENTER);
@@ -598,19 +633,19 @@ async function build3DScatter() {
     document.querySelectorAll('#btn-view-front,#btn-view-top,#btn-view-side,#btn-view-reset').forEach(b => b.classList.remove('active'));
   }
   document.getElementById('btn-view-front').addEventListener('click', () => {
-    setView([5, 4, 20]);
+    setView([4, 3, 20]);
     document.getElementById('btn-view-front').classList.add('active');
   });
   document.getElementById('btn-view-top').addEventListener('click', () => {
-    setView([5, 18, 5.01]);
+    setView([4, 18, 4.01]);
     document.getElementById('btn-view-top').classList.add('active');
   });
   document.getElementById('btn-view-side').addEventListener('click', () => {
-    setView([20, 4, 5]);
+    setView([20, 3, 4]);
     document.getElementById('btn-view-side').classList.add('active');
   });
   document.getElementById('btn-view-reset').addEventListener('click', () => {
-    setView([14, 10, 14]);
+    setView([16, 8, 16]);
     controls.autoRotate = true;
     document.getElementById('btn-view-reset').classList.add('active');
   });

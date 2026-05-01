@@ -6,6 +6,14 @@
 <title>HuggingFace LLM Trends Explorer</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
 <style>
 :root {
   --bg: #0f1117;
@@ -146,8 +154,14 @@ function renderApp() {
       <div class="card"><h2>Top Downloads</h2><canvas id="chart-downloads"></canvas></div>
       <div class="card"><h2>Top Inference Providers</h2><canvas id="chart-providers"></canvas></div>
     </div>
+    <div class="card full" style="margin-bottom:20px">
+      <h2>Downloads by Model Size &amp; Release Date (3D)</h2>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Drag to rotate, scroll to zoom, right-click to pan. Colors: <span style="color:#6c5ce7">Base</span> / <span style="color:#00cec9">Fine-tune</span> / <span style="color:#fdcb6e">Quantized</span> / <span style="color:#ff7675">LoRA</span></div>
+      <div id="scatter3d-container" style="width:100%;height:500px;position:relative;border-radius:8px;overflow:hidden;background:#0a0c12;"></div>
+      <div id="scatter3d-tooltip" style="display:none;position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--text);pointer-events:none;z-index:10;max-width:350px;"></div>
+    </div>
     <div class="grid">
-      <div class="card"><h2>Downloads by Model Size</h2><canvas id="chart-scatter"></canvas></div>
+      <div class="card"><h2>Downloads by Model Size (2D)</h2><canvas id="chart-scatter"></canvas></div>
       <div class="card"><h2>Monthly Trends</h2><canvas id="chart-monthly"></canvas></div>
     </div>
     <div class="card full" style="margin-bottom:20px">
@@ -326,6 +340,237 @@ function buildCharts() {
     },
     options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
   });
+
+  // 3D Scatter (async - loads Three.js module)
+  build3DScatter();
+}
+
+async function build3DScatter() {
+  const THREE = await import('three');
+  const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+
+  const container = document.getElementById('scatter3d-container');
+  const tooltip = document.getElementById('scatter3d-tooltip');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0c12);
+
+  const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+  camera.position.set(12, 10, 12);
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch (e) {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b90a5;font-size:14px;">3D chart requires WebGL. Please use a browser with WebGL support.</div>';
+    return;
+  }
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.5;
+
+  // Prepare data - 3 axes: X=log(params), Y=log(downloads), Z=date
+  const models3d = allModels.filter(m => getParamCount(m) && m.createdAt);
+  const dates = models3d.map(m => new Date(m.createdAt).getTime());
+  const minDate = Math.min(...dates);
+  const maxDate = Math.max(...dates);
+  const dateRange = maxDate - minDate || 1;
+
+  const params = models3d.map(m => Math.log10(getParamCount(m)));
+  const minP = Math.min(...params);
+  const maxP = Math.max(...params);
+  const pRange = maxP - minP || 1;
+
+  const dls = models3d.map(m => Math.log10(Math.max(m.downloads, 1)));
+  const minDL = Math.min(...dls);
+  const maxDL = Math.max(...dls);
+  const dlRange = maxDL - minDL || 1;
+
+  const AXIS_LEN = 10;
+  const catColors = { base: 0x6c5ce7, finetune: 0x00cec9, quantized: 0xfdcb6e, adapter: 0xff7675 };
+
+  // Points
+  const pointsData = [];
+  const geometry = new THREE.BufferGeometry();
+  const positions = [];
+  const colors = [];
+  const sizes = [];
+
+  models3d.forEach((m, i) => {
+    const x = ((params[i] - minP) / pRange) * AXIS_LEN;
+    const y = ((dls[i] - minDL) / dlRange) * AXIS_LEN;
+    const z = ((dates[i] - minDate) / dateRange) * AXIS_LEN;
+    positions.push(x, y, z);
+
+    const cat = getModelCategory(m);
+    const col = new THREE.Color(catColors[cat] || 0x8b90a5);
+    colors.push(col.r, col.g, col.b);
+
+    // Size based on downloads
+    const s = 3 + (dls[i] - minDL) / dlRange * 8;
+    sizes.push(s);
+
+    pointsData.push({ model: m, pos: new THREE.Vector3(x, y, z), cat });
+  });
+
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+  const pointsMaterial = new THREE.ShaderMaterial({
+    vertexShader: `
+      attribute float size;
+      varying vec3 vColor;
+      void main() {
+        vColor = color;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (200.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      void main() {
+        float d = length(gl_PointCoord - vec2(0.5));
+        if (d > 0.5) discard;
+        float alpha = 1.0 - smoothstep(0.35, 0.5, d);
+        gl_FragColor = vec4(vColor, alpha * 0.85);
+      }
+    `,
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+  });
+
+  const points = new THREE.Points(geometry, pointsMaterial);
+  scene.add(points);
+
+  // Axes
+  const axisMat = new THREE.LineBasicMaterial({ color: 0x2e3348 });
+  function addAxis(from, to) {
+    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...from), new THREE.Vector3(...to)]);
+    scene.add(new THREE.Line(g, axisMat));
+  }
+  addAxis([0, 0, 0], [AXIS_LEN, 0, 0]);
+  addAxis([0, 0, 0], [0, AXIS_LEN, 0]);
+  addAxis([0, 0, 0], [0, 0, AXIS_LEN]);
+
+  // Grid on floor
+  const gridHelper = new THREE.GridHelper(AXIS_LEN, 10, 0x1a1d27, 0x1a1d27);
+  gridHelper.position.set(AXIS_LEN / 2, 0, AXIS_LEN / 2);
+  scene.add(gridHelper);
+
+  // Axis labels using sprites
+  function makeLabel(text, position, color = '#8b90a5') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.font = 'bold 28px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, 128, 40);
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(...position);
+    sprite.scale.set(3, 0.75, 1);
+    scene.add(sprite);
+  }
+
+  makeLabel('Parameters (B)', [AXIS_LEN / 2, -1, 0], '#a29bfe');
+  makeLabel('Downloads', [- 1.5, AXIS_LEN / 2, 0], '#74b9ff');
+  makeLabel('Release Date', [0, -1, AXIS_LEN / 2], '#00cec9');
+
+  // Tick labels
+  function addTicks(axis, min, max, count, formatter) {
+    for (let i = 0; i <= count; i++) {
+      const t = i / count;
+      const val = min + t * (max - min);
+      const pos = t * AXIS_LEN;
+      let position;
+      if (axis === 'x') position = [pos, -0.5, -0.3];
+      else if (axis === 'y') position = [-0.8, pos, 0];
+      else position = [-0.3, -0.5, pos];
+      makeLabel(formatter(val), position, '#555');
+    }
+  }
+
+  addTicks('x', minP, maxP, 4, v => formatParams(Math.pow(10, v)));
+  addTicks('y', minDL, maxDL, 4, v => formatNum(Math.round(Math.pow(10, v))));
+  addTicks('z', 0, 1, 4, v => {
+    const d = new Date(minDate + v * dateRange);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  });
+
+  // Raycaster for hover tooltip
+  const raycaster = new THREE.Raycaster();
+  raycaster.params.Points.threshold = 0.3;
+  const mouse = new THREE.Vector2();
+  let hoveredIdx = -1;
+
+  container.addEventListener('mousemove', (e) => {
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(points);
+
+    if (intersects.length > 0) {
+      const idx = intersects[0].index;
+      if (idx !== hoveredIdx) {
+        hoveredIdx = idx;
+        const pd = pointsData[idx];
+        const m = pd.model;
+        tooltip.style.display = 'block';
+        tooltip.innerHTML = `<strong>${m.id}</strong><br>
+          Params: ${formatParams(getParamCount(m))}<br>
+          Downloads: ${formatNum(m.downloads)}<br>
+          Released: ${m.createdAt?.slice(0, 10)}<br>
+          Category: ${pd.cat}`;
+      }
+      tooltip.style.left = (e.clientX - container.getBoundingClientRect().left + 12) + 'px';
+      tooltip.style.top = (e.clientY - container.getBoundingClientRect().top - 10) + 'px';
+      controls.autoRotate = false;
+    } else {
+      tooltip.style.display = 'none';
+      hoveredIdx = -1;
+      controls.autoRotate = true;
+    }
+  });
+
+  container.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+    hoveredIdx = -1;
+    controls.autoRotate = true;
+  });
+
+  // Animate
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Resize
+  const resizeObs = new ResizeObserver(() => {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+  resizeObs.observe(container);
 }
 
 function buildTree() {

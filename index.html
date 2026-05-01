@@ -524,23 +524,33 @@ async function build3DScatter() {
   geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
 
   const pointsMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      hoveredIndex: { value: -1.0 }
+    },
     vertexShader: `
       attribute float size;
+      uniform float hoveredIndex;
       varying vec3 vColor;
+      varying float vHovered;
       void main() {
         vColor = color;
+        vHovered = (abs(float(gl_VertexID) - hoveredIndex) < 0.5) ? 1.0 : 0.0;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * (150.0 / -mvPosition.z);
+        float s = vHovered > 0.5 ? size * 3.5 : size;
+        gl_PointSize = s * (150.0 / -mvPosition.z);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: `
       varying vec3 vColor;
+      varying float vHovered;
       void main() {
         float d = length(gl_PointCoord - vec2(0.5));
         if (d > 0.5) discard;
         float alpha = 1.0 - smoothstep(0.35, 0.5, d);
-        gl_FragColor = vec4(vColor, alpha * 0.85);
+        float a = vHovered > 0.5 ? 1.0 : alpha * 0.85;
+        vec3 c = vHovered > 0.5 ? vColor * 1.3 : vColor;
+        gl_FragColor = vec4(c, a);
       }
     `,
     vertexColors: true,
@@ -611,7 +621,7 @@ async function build3DScatter() {
 
   // Raycaster for hover tooltip
   const raycaster = new THREE.Raycaster();
-  raycaster.params.Points.threshold = 0.3;
+  raycaster.params.Points.threshold = 0.5;
   const mouse = new THREE.Vector2();
   let hoveredIdx = -1;
 
@@ -627,6 +637,7 @@ async function build3DScatter() {
       const idx = intersects[0].index;
       if (idx !== hoveredIdx) {
         hoveredIdx = idx;
+        pointsMaterial.uniforms.hoveredIndex.value = idx;
         const pd = pointsData[idx];
         const m = pd.model;
         const cat = pd.cat;
@@ -649,7 +660,10 @@ async function build3DScatter() {
       controls.autoRotate = false;
     } else {
       tooltip.style.display = 'none';
-      hoveredIdx = -1;
+      if (hoveredIdx !== -1) {
+        hoveredIdx = -1;
+        pointsMaterial.uniforms.hoveredIndex.value = -1.0;
+      }
       controls.autoRotate = true;
     }
   });
@@ -657,6 +671,7 @@ async function build3DScatter() {
   container.addEventListener('mouseleave', () => {
     tooltip.style.display = 'none';
     hoveredIdx = -1;
+    pointsMaterial.uniforms.hoveredIndex.value = -1.0;
     controls.autoRotate = true;
   });
 

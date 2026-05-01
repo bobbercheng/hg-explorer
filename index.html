@@ -52,6 +52,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-s
 .card h2 { font-size: 14px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
 .card.full { grid-column: 1 / -1; }
 canvas { max-height: 320px; }
+.card.full canvas { max-height: 450px; }
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .tab { padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; background: var(--surface2); color: var(--text2); border: 1px solid var(--border); transition: all 0.2s; }
 .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
@@ -208,11 +209,9 @@ function renderApp() {
       <div id="scatter3d-container" style="width:100%;height:550px;position:relative;border-radius:8px;overflow:hidden;background:#0a0c12;"></div>
       <div id="scatter3d-tooltip"></div>
     </div>
-    <div class="grid triple">
-      <div class="card card-fs" id="card-scatter"><button class="fs-btn" onclick="toggleFS(this)">&#x26F6;</button><h2>Downloads by Model Size</h2><canvas id="chart-scatter"></canvas></div>
-      <div class="card card-fs" id="card-size-date"><button class="fs-btn" onclick="toggleFS(this)">&#x26F6;</button><h2>Model Size by Release Date</h2><canvas id="chart-size-date"></canvas></div>
-      <div class="card"><h2>Monthly Trends</h2><canvas id="chart-monthly"></canvas></div>
-    </div>
+    <div class="card full card-fs" id="card-scatter" style="margin-bottom:20px"><button class="fs-btn" onclick="toggleFS(this)">&#x26F6;</button><h2>Downloads by Model Size</h2><canvas id="chart-scatter"></canvas></div>
+    <div class="card full card-fs" id="card-size-date" style="margin-bottom:20px"><button class="fs-btn" onclick="toggleFS(this)">&#x26F6;</button><h2>Model Size by Release Date</h2><canvas id="chart-size-date"></canvas></div>
+    <div class="card full" style="margin-bottom:20px"><h2>Monthly Trends</h2><canvas id="chart-monthly"></canvas></div>
     <div class="card full" style="margin-bottom:20px">
       <h2>Base Model &rarr; Fine-tune Relationships</h2>
       <div class="tabs" id="tree-tabs"></div>
@@ -348,6 +347,9 @@ function buildCharts() {
     if (modelsByCategory[cat]) modelsByCategory[cat].push(m);
   });
 
+  // Shared scatter options for easy hover
+  const scatterInteraction = { mode: 'nearest', intersect: false, axis: 'xy' };
+
   // Scatter: downloads vs size
   new Chart(document.getElementById('chart-scatter'), {
     type: 'scatter',
@@ -358,11 +360,13 @@ function buildCharts() {
         backgroundColor: c.color + 'aa',
         borderColor: c.color,
         pointRadius: 2.5,
-        pointHoverRadius: 5
+        pointHoverRadius: 6,
+        pointHitRadius: 15
       }))
     },
     options: {
       responsive: true,
+      interaction: scatterInteraction,
       plugins: {
         legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } },
         tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${formatParams(ctx.raw.x * 1e9)} params, ${formatNum(ctx.raw.y)} downloads` } }
@@ -391,11 +395,13 @@ function buildCharts() {
         backgroundColor: c.color + 'aa',
         borderColor: c.color,
         pointRadius: 2.5,
-        pointHoverRadius: 5
+        pointHoverRadius: 6,
+        pointHitRadius: 15
       }))
     },
     options: {
       responsive: true,
+      interaction: scatterInteraction,
       plugins: {
         legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } },
         tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${formatParams(ctx.raw.y * 1e9)} — ${ctx.raw.x}` } }

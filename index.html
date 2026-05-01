@@ -86,6 +86,13 @@ tr:hover { background: var(--surface2); }
 .search-box { width: 100%; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; margin-bottom: 16px; outline: none; }
 .search-box:focus { border-color: var(--accent); }
 .chart-note { font-size: 11px; color: var(--text2); margin-top: 8px; }
+#scatter3d-tooltip { display: none; position: absolute; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--text); pointer-events: none; z-index: 10; max-width: 400px; line-height: 1.6; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+#scatter3d-tooltip .tt-name { font-weight: 700; font-size: 13px; color: var(--accent2); margin-bottom: 4px; word-break: break-all; }
+#scatter3d-tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; }
+#scatter3d-tooltip .tt-label { color: var(--text2); }
+#scatter3d-tooltip .tt-val { font-weight: 600; }
+#scatter3d-card.fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; overflow: auto; display: flex; flex-direction: column; }
+#scatter3d-card.fullscreen #scatter3d-container { flex: 1; height: auto !important; border-radius: 0; }
 @media (max-width: 900px) {
   .grid, .grid.triple { grid-template-columns: 1fr; }
   .header { flex-direction: column; align-items: flex-start; }
@@ -154,7 +161,7 @@ function renderApp() {
       <div class="card"><h2>Top Downloads</h2><canvas id="chart-downloads"></canvas></div>
       <div class="card"><h2>Top Inference Providers</h2><canvas id="chart-providers"></canvas></div>
     </div>
-    <div class="card full" style="margin-bottom:20px">
+    <div class="card full" style="margin-bottom:20px" id="scatter3d-card">
       <h2>Downloads by Model Size &amp; Release Date (3D)</h2>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
         <div style="font-size:11px;color:var(--text2);">Drag to rotate, scroll to zoom, right-click to pan. Colors: <span style="color:#6c5ce7">Base</span> / <span style="color:#00cec9">Fine-tune</span> / <span style="color:#fdcb6e">Quantized</span> / <span style="color:#ff7675">LoRA</span></div>
@@ -163,10 +170,11 @@ function renderApp() {
           <button id="btn-view-top" class="tab" style="cursor:pointer;">Top</button>
           <button id="btn-view-side" class="tab" style="cursor:pointer;">Side</button>
           <button id="btn-view-reset" class="tab active" style="cursor:pointer;">3D</button>
+          <button id="btn-fullscreen" class="tab" style="cursor:pointer;">&#x26F6; Fullscreen</button>
         </div>
       </div>
       <div id="scatter3d-container" style="width:100%;height:550px;position:relative;border-radius:8px;overflow:hidden;background:#0a0c12;"></div>
-      <div id="scatter3d-tooltip" style="display:none;position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--text);pointer-events:none;z-index:10;max-width:350px;"></div>
+      <div id="scatter3d-tooltip"></div>
     </div>
     <div class="grid">
       <div class="card"><h2>Downloads by Model Size (2D)</h2><canvas id="chart-scatter"></canvas></div>
@@ -540,15 +548,24 @@ async function build3DScatter() {
         hoveredIdx = idx;
         const pd = pointsData[idx];
         const m = pd.model;
+        const cat = pd.cat;
+        const catLabel = { base: 'Base', finetune: 'Fine-tune', quantized: 'Quantized', adapter: 'LoRA/Adapter' }[cat] || cat;
+        const catColor = { base: '#6c5ce7', finetune: '#00cec9', quantized: '#fdcb6e', adapter: '#ff7675' }[cat] || '#8b90a5';
+        const providers = getInferenceProviders(m);
+        const baseId = getBaseModelId(m);
         tooltip.style.display = 'block';
-        tooltip.innerHTML = `<strong>${m.id}</strong><br>
-          Params: ${formatParams(getParamCount(m))}<br>
-          Downloads: ${formatNum(m.downloads)}<br>
-          Released: ${m.createdAt?.slice(0, 10)}<br>
-          Category: ${pd.cat}`;
+        tooltip.innerHTML = `
+          <div class="tt-name">${m.id}</div>
+          <div class="tt-row"><span class="tt-label">Category</span><span class="tt-val" style="color:${catColor}">${catLabel}</span></div>
+          <div class="tt-row"><span class="tt-label">Parameters</span><span class="tt-val">${formatParams(getParamCount(m))}</span></div>
+          <div class="tt-row"><span class="tt-label">Downloads</span><span class="tt-val">${formatNum(m.downloads)}</span></div>
+          <div class="tt-row"><span class="tt-label">Released</span><span class="tt-val">${m.createdAt?.slice(0, 10)}</span></div>
+          ${baseId ? `<div class="tt-row"><span class="tt-label">Base Model</span><span class="tt-val" style="font-size:11px">${baseId}</span></div>` : ''}
+          ${providers.length ? `<div class="tt-row"><span class="tt-label">Providers</span><span class="tt-val">${providers.join(', ')}</span></div>` : ''}`;
       }
-      tooltip.style.left = (e.clientX - container.getBoundingClientRect().left + 12) + 'px';
-      tooltip.style.top = (e.clientY - container.getBoundingClientRect().top - 10) + 'px';
+      const cardRect = document.getElementById('scatter3d-card').getBoundingClientRect();
+      tooltip.style.left = (e.clientX - cardRect.left + 14) + 'px';
+      tooltip.style.top = (e.clientY - cardRect.top - 10) + 'px';
       controls.autoRotate = false;
     } else {
       tooltip.style.display = 'none';
@@ -596,6 +613,29 @@ async function build3DScatter() {
     setView([14, 10, 14]);
     controls.autoRotate = true;
     document.getElementById('btn-view-reset').classList.add('active');
+  });
+
+  // Fullscreen
+  const card = document.getElementById('scatter3d-card');
+  const fsBtn = document.getElementById('btn-fullscreen');
+  fsBtn.addEventListener('click', () => {
+    card.classList.toggle('fullscreen');
+    const isFS = card.classList.contains('fullscreen');
+    fsBtn.textContent = isFS ? '\u2716 Exit' : '\u26F6 Fullscreen';
+    fsBtn.classList.toggle('active', isFS);
+    // Trigger resize after layout settles
+    setTimeout(() => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }, 50);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && card.classList.contains('fullscreen')) {
+      fsBtn.click();
+    }
   });
 
   // Resize

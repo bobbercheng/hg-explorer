@@ -89,8 +89,8 @@ tr:hover { background: var(--surface2); }
 .card-fs { position: relative; }
 .card-fs .fs-btn { position: absolute; top: 12px; right: 14px; cursor: pointer; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); font-size: 12px; padding: 4px 10px; z-index: 5; transition: all 0.2s; }
 .card-fs .fs-btn:hover { border-color: var(--accent); color: var(--text); }
-.card-fs.fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; overflow: auto; display: flex; flex-direction: column; }
-.card-fs.fullscreen canvas { max-height: none !important; flex: 1; }
+.card-fs.fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; overflow: hidden; }
+.card-fs.fullscreen canvas { max-height: none !important; height: calc(100vh - 80px) !important; width: 100% !important; }
 .card-fs.fullscreen .fs-btn { top: 16px; right: 20px; }
 #scatter3d-card { position: relative; }
 #scatter3d-tooltip { display: none; position: fixed; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--text); pointer-events: none; z-index: 1001; max-width: 400px; line-height: 1.6; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
@@ -133,8 +133,18 @@ function toggleFS(btn) {
   card.classList.toggle('fullscreen');
   const isFS = card.classList.contains('fullscreen');
   btn.textContent = isFS ? '\u2716' : '\u26F6';
-  // Resize chart after layout change
-  setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 50);
+  // Chart.js needs explicit resize after layout change
+  setTimeout(() => {
+    const canvas = card.querySelector('canvas');
+    if (canvas) {
+      const chart = Chart.getChart(canvas);
+      if (chart) {
+        canvas.style.width = '';
+        canvas.style.height = '';
+        chart.resize();
+      }
+    }
+  }, 60);
 }
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -322,30 +332,39 @@ function buildCharts() {
     options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } }
   });
 
+  // Shared category config for scatter charts
+  const catConfig = [
+    { key: 'base', label: 'Base', color: '#6c5ce7' },
+    { key: 'finetune', label: 'Fine-tune', color: '#00cec9' },
+    { key: 'quantized', label: 'Quantized', color: '#fdcb6e' },
+    { key: 'adapter', label: 'LoRA/Adapter', color: '#ff7675' },
+  ];
+
+  // Group models by category for scatter charts
+  const modelsByCategory = {};
+  catConfig.forEach(c => { modelsByCategory[c.key] = []; });
+  allModels.filter(m => getParamCount(m)).forEach(m => {
+    const cat = getModelCategory(m);
+    if (modelsByCategory[cat]) modelsByCategory[cat].push(m);
+  });
+
   // Scatter: downloads vs size
-  const scatterData = allModels.filter(m => getParamCount(m)).map(m => ({
-    x: getParamCount(m) / 1e9,
-    y: m.downloads,
-    label: m.id
-  }));
   new Chart(document.getElementById('chart-scatter'), {
     type: 'scatter',
     data: {
-      datasets: [{
-        label: 'Models',
-        data: scatterData,
-        backgroundColor: (ctx) => {
-          const cat = getModelCategory(allModels.find(m => m.id === ctx.raw?.label) || {});
-          return cat === 'base' ? '#6c5ce7aa' : cat === 'quantized' ? '#fdcb6eaa' : cat === 'adapter' ? '#ff7675aa' : '#00cec9aa';
-        },
+      datasets: catConfig.map(c => ({
+        label: c.label,
+        data: modelsByCategory[c.key].map(m => ({ x: getParamCount(m) / 1e9, y: m.downloads, label: m.id })),
+        backgroundColor: c.color + 'aa',
+        borderColor: c.color,
         pointRadius: 2.5,
         pointHoverRadius: 5
-      }]
+      }))
     },
     options: {
       responsive: true,
       plugins: {
-        legend: { display: false },
+        legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } },
         tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${formatParams(ctx.raw.x * 1e9)} params, ${formatNum(ctx.raw.y)} downloads` } }
       },
       scales: {
@@ -356,30 +375,29 @@ function buildCharts() {
   });
 
   // Model Size by Release Date
-  const sizeDateData = allModels.filter(m => getParamCount(m) && m.createdAt).map(m => ({
-    x: m.createdAt.slice(0, 10),
-    y: getParamCount(m) / 1e9,
-    label: m.id
-  }));
-  const catColorMap = { base: '#6c5ce7aa', finetune: '#00cec9aa', quantized: '#fdcb6eaa', adapter: '#ff7675aa' };
+  const modelsWithDate = {};
+  catConfig.forEach(c => { modelsWithDate[c.key] = []; });
+  allModels.filter(m => getParamCount(m) && m.createdAt).forEach(m => {
+    const cat = getModelCategory(m);
+    if (modelsWithDate[cat]) modelsWithDate[cat].push(m);
+  });
+
   new Chart(document.getElementById('chart-size-date'), {
     type: 'scatter',
     data: {
-      datasets: [{
-        label: 'Models',
-        data: sizeDateData,
-        backgroundColor: (ctx) => {
-          const cat = getModelCategory(allModels.find(m => m.id === ctx.raw?.label) || {});
-          return catColorMap[cat] || '#8b90a5aa';
-        },
+      datasets: catConfig.map(c => ({
+        label: c.label,
+        data: modelsWithDate[c.key].map(m => ({ x: m.createdAt.slice(0, 10), y: getParamCount(m) / 1e9, label: m.id })),
+        backgroundColor: c.color + 'aa',
+        borderColor: c.color,
         pointRadius: 2.5,
         pointHoverRadius: 5
-      }]
+      }))
     },
     options: {
       responsive: true,
       plugins: {
-        legend: { display: false },
+        legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } },
         tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${formatParams(ctx.raw.y * 1e9)} — ${ctx.raw.x}` } }
       },
       scales: {

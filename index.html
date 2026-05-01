@@ -156,8 +156,16 @@ function renderApp() {
     </div>
     <div class="card full" style="margin-bottom:20px">
       <h2>Downloads by Model Size &amp; Release Date (3D)</h2>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Drag to rotate, scroll to zoom, right-click to pan. Colors: <span style="color:#6c5ce7">Base</span> / <span style="color:#00cec9">Fine-tune</span> / <span style="color:#fdcb6e">Quantized</span> / <span style="color:#ff7675">LoRA</span></div>
-      <div id="scatter3d-container" style="width:100%;height:500px;position:relative;border-radius:8px;overflow:hidden;background:#0a0c12;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:11px;color:var(--text2);">Drag to rotate, scroll to zoom, right-click to pan. Colors: <span style="color:#6c5ce7">Base</span> / <span style="color:#00cec9">Fine-tune</span> / <span style="color:#fdcb6e">Quantized</span> / <span style="color:#ff7675">LoRA</span></div>
+        <div style="display:flex;gap:6px;">
+          <button id="btn-view-front" class="tab" style="cursor:pointer;">Front</button>
+          <button id="btn-view-top" class="tab" style="cursor:pointer;">Top</button>
+          <button id="btn-view-side" class="tab" style="cursor:pointer;">Side</button>
+          <button id="btn-view-reset" class="tab active" style="cursor:pointer;">3D</button>
+        </div>
+      </div>
+      <div id="scatter3d-container" style="width:100%;height:550px;position:relative;border-radius:8px;overflow:hidden;background:#0a0c12;"></div>
       <div id="scatter3d-tooltip" style="display:none;position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--text);pointer-events:none;z-index:10;max-width:350px;"></div>
     </div>
     <div class="grid">
@@ -357,8 +365,8 @@ async function build3DScatter() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0c12);
 
-  const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-  camera.position.set(12, 10, 12);
+  const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+  camera.position.set(14, 10, 14);
 
   let renderer;
   try {
@@ -376,6 +384,7 @@ async function build3DScatter() {
   controls.dampingFactor = 0.08;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.5;
+  controls.target.set(5, 4, 5); // Look at center of data cube
 
   // Prepare data - 3 axes: X=log(params), Y=log(downloads), Z=date
   const models3d = allModels.filter(m => getParamCount(m) && m.createdAt);
@@ -415,7 +424,7 @@ async function build3DScatter() {
     colors.push(col.r, col.g, col.b);
 
     // Size based on downloads
-    const s = 3 + (dls[i] - minDL) / dlRange * 8;
+    const s = 1.5 + (dls[i] - minDL) / dlRange * 3;
     sizes.push(s);
 
     pointsData.push({ model: m, pos: new THREE.Vector3(x, y, z), cat });
@@ -432,7 +441,7 @@ async function build3DScatter() {
       void main() {
         vColor = color;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * (200.0 / -mvPosition.z);
+        gl_PointSize = size * (150.0 / -mvPosition.z);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -561,6 +570,33 @@ async function build3DScatter() {
     renderer.render(scene, camera);
   }
   animate();
+
+  // View presets
+  const CENTER = new THREE.Vector3(5, 4, 5);
+  function setView(pos, target) {
+    camera.position.set(...pos);
+    controls.target.copy(target || CENTER);
+    controls.autoRotate = false;
+    controls.update();
+    document.querySelectorAll('#btn-view-front,#btn-view-top,#btn-view-side,#btn-view-reset').forEach(b => b.classList.remove('active'));
+  }
+  document.getElementById('btn-view-front').addEventListener('click', () => {
+    setView([5, 4, 20]);
+    document.getElementById('btn-view-front').classList.add('active');
+  });
+  document.getElementById('btn-view-top').addEventListener('click', () => {
+    setView([5, 18, 5.01]);
+    document.getElementById('btn-view-top').classList.add('active');
+  });
+  document.getElementById('btn-view-side').addEventListener('click', () => {
+    setView([20, 4, 5]);
+    document.getElementById('btn-view-side').classList.add('active');
+  });
+  document.getElementById('btn-view-reset').addEventListener('click', () => {
+    setView([14, 10, 14]);
+    controls.autoRotate = true;
+    document.getElementById('btn-view-reset').classList.add('active');
+  });
 
   // Resize
   const resizeObs = new ResizeObserver(() => {
